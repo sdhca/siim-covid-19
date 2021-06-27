@@ -6,6 +6,7 @@
 import numpy as np # linear algebra
 import pandas as pd # data processing, CSV file I/O (e.g. pd.read_csv)
 from pathlib import Path
+import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
 from tensorflow.keras import Input
@@ -15,6 +16,7 @@ from tensorflow.keras.layers import Flatten, Dense
 from tensorflow.keras.applications.vgg16 import VGG16, preprocess_input
 from matplotlib import pyplot as plt
 import re
+from datetime import datetime
 
 
 # Input data files are available in the read-only "../input/" directory
@@ -29,7 +31,11 @@ import re
 # You can also write temporary files to /kaggle/temp/, but they won't be saved outside of the current session
 
 # image_size = (224, 224)  # after 10 epochs, val_binary_accuracy: 0.7319
+# tf.config.set_visible_devices([], 'GPU')
 image_size = (128, 128)
+batch_size=24
+# policy = tf.keras.mixed_precision.Policy('mixed_float16')
+# tf.keras.mixed_precision.set_global_policy(policy)
 
 # %%
 df_input_path = Path('data')
@@ -38,7 +44,6 @@ image_input_path = Path('image_files/2-classes/png_masked_2-class_128x128')
 
 # %%
 datagen_shuffle=True  # If shuffle is False, it looks like the generator will go through the negative directory first and the positive directory second
-batch_size=20
 # datagen = ImageDataGenerator(rescale=1./255)
 datagen = ImageDataGenerator(preprocessing_function=preprocess_input,
                              width_shift_range=[-20, 20],
@@ -104,8 +109,8 @@ def summarize_diagnostics(history):
     # plot accuracy
     plt.subplot(212)
     plt.title('Classification Accuracy')
-    plt.plot(history.history['binary_accuracy'], color='blue', label='train')
-    plt.plot(history.history['val_binary_accuracy'], color='orange', label='test')
+    plt.plot(history.history['accuracy'], color='blue', label='train')
+    plt.plot(history.history['val_accuracy'], color='orange', label='test')
     # save plot to file
 #     filename = sys.argv[0].split('/')[-1]
     plt.show(block=False)
@@ -115,8 +120,8 @@ def summarize_diagnostics(history):
 # %%
 model.compile(
     optimizer=keras.optimizers.Adam(),
-    loss=keras.losses.BinaryCrossentropy(from_logits=True),
-    metrics=[keras.metrics.BinaryAccuracy()],
+    loss=keras.losses.BinaryCrossentropy(),
+    metrics=['accuracy'],
 )
 
 # %%
@@ -127,25 +132,46 @@ model.compile(
 #     model.save(data_dir/('VGG_transfer_w_masks_{0}.h5'.format(i * epochs)))
 #     summarize_diagnostics(history)
 
-epochs = 30
-history = model.fit(train_it, epochs=epochs, validation_data=dev_it)
-model.save(data_dir/'VGG16_transfer_mask.h5')
+# Create a TensorBoard callback
+logs = Path("logs")/(datetime.now().strftime("%Y%m%d-%H%M%S"))
+
+tboard_callback = tf.keras.callbacks.TensorBoard(log_dir = logs,
+                                                 histogram_freq = 1,
+                                                 profile_batch = '200,212')
+
+# %%
+
+epochs = 2
+history = model.fit(train_it, epochs=epochs, validation_data=dev_it, callbacks=[tboard_callback])
+# model.save(data_dir/'VGG16_transfer_mask.h5')
 summarize_diagnostics(history)
 
+
+# %%
+# model = tf.keras.models.load_model(data_dir/'VGG16_transfer_mask.h5')
+# model.trainable = True
 # %%
 base_model.trainable = True
 model.summary()
 
 model.compile(
     optimizer=keras.optimizers.Adam(1e-5),  # Low learning rate
-    loss=keras.losses.BinaryCrossentropy(from_logits=True),
-    metrics=[keras.metrics.BinaryAccuracy()],
+    loss=keras.losses.BinaryCrossentropy(),
+    metrics=['accuracy'],
 )
 
-epochs = 10
-history2 = model.fit(train_it, epochs=epochs, validation_data=dev_it)
-model.save(data_dir/'VGG16_transfer_mask_2.h5')
-summarize_diagnostics(history2)
+plt.show()
 
 # %%
 
+
+# epochs = 10
+# history2 = model.fit(train_it, epochs=epochs, validation_data=dev_it, callbacks = [tboard_callback])
+# model.save(data_dir/'VGG16_transfer_mask_2.h5')
+# summarize_diagnostics(history2)
+
+# %%
+
+# %load_ext tensorboard
+# %tensorboard --logdir=logs
+# %%
