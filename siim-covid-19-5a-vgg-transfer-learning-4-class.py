@@ -20,6 +20,8 @@ from datetime import datetime
 
 
 
+keras.mixed_precision.set_global_policy('mixed_float16')
+
 # Input data files are available in the read-only "../input/" directory
 # For example, running this (by clicking run or pressing Shift+Enter) will list all files under the input directory
 
@@ -45,13 +47,23 @@ image_input_path = Path('image_files/4-classes/png_4-class_1024x1024')
 datagen_shuffle=True  # If shuffle is False, it looks like the generator will go through the negative directory first and the positive directory second
 batch_size=128
 # datagen = ImageDataGenerator(rescale=1./255)
-datagen = ImageDataGenerator(preprocessing_function=preprocess_input,
-                             width_shift_range=[-20, 20],
-                             height_shift_range=[-20, 20],
-                             rotation_range = 30)
-train_it = datagen.flow_from_directory(image_input_path/'train', shuffle=datagen_shuffle, target_size=image_size, batch_size=batch_size)
-dev_it = datagen.flow_from_directory(image_input_path/'dev', shuffle=datagen_shuffle, target_size=image_size, batch_size=batch_size)
-print(train_it.class_indices)
+# datagen = ImageDataGenerator(preprocessing_function=preprocess_input,
+#                              width_shift_range=[-20, 20],
+#                              height_shift_range=[-20, 20],
+#                              rotation_range = 30)
+# train_it = datagen.flow_from_directory(image_input_path/'train', shuffle=datagen_shuffle, target_size=image_size, batch_size=batch_size)
+# dev_it = datagen.flow_from_directory(image_input_path/'dev', shuffle=datagen_shuffle, target_size=image_size, batch_size=batch_size)
+train_it = keras.preprocessing.image_dataset_from_directory(image_input_path/'train',
+                                                            batch_size=batch_size,
+                                                            image_size=image_size,
+                                                            seed=12345)
+dev_it = keras.preprocessing.image_dataset_from_directory(image_input_path/'dev',
+                                                          batch_size=batch_size,
+                                                          image_size=image_size,
+                                                          seed=12345)
+
+# print(train_it.class_indices)
+train_it.class_names
 
 
 # %%
@@ -68,12 +80,21 @@ print(train_it.class_indices)
 # plt.imshow(images[0][:, :, 2])
 # plt.show()
 
+plt.figure(figsize=(10, 10))
+for images, labels in train_it.take(1):
+    for i in range(9):
+        # print(images[i].shape)
+        ax = plt.subplot(3, 3, i + 1)
+        plt.imshow(images[i].numpy().astype("uint8"))
+        plt.title(int(labels[i]))
+        plt.axis("off")
+
 
 # %%
 # Getting the ordered list of filenames for the images
-image_files = pd.Series(train_it.filenames)
+image_files = pd.Series(train_it.file_paths)
 
-image_files = list(image_files.str.split('\\', expand=True)[1].str[:-4])
+image_files = list(image_files.str.split('\\', expand=True)[5].str[:-4])
 print(image_files[:5])
 # print(image_files)
 
@@ -89,9 +110,15 @@ train_df_sorted.head()
 
 
 # %%
+train_ds = train_it.prefetch(buffer_size=batch_size)
+dev_ds = dev_it.prefetch(buffer_size=batch_size)
+
+
 # %% Load and modify VGG16 model
-new_input = Input(shape=(image_size[0], image_size[1], 3))
-base_model = VGG16(include_top=False, input_tensor=new_input)
+new_input = Input(shape=image_size + (3,))
+new_input_preprocessed = preprocess_input(new_input)
+# base_model = VGG16(include_top=False, input_tensor=new_input)
+base_model = VGG16(include_top=False, input_tensor=new_input_preprocessed, classes=4)
 base_model.trainable = False
 # for layer in base_model.layers:
 #     layer.trainable = False
@@ -129,20 +156,24 @@ tboard_callback = keras.callbacks.TensorBoard(log_dir = logs,
                                               profile_batch = '40,50')
 
 
+
+
 # %%
 model.compile(
     optimizer=keras.optimizers.Adam(learning_rate=1e-3),
-    loss='categorical_crossentropy',
+    loss='sparse_categorical_crossentropy',
     metrics=['accuracy'],
 )
-history = model.fit(train_it, epochs=10, validation_data=dev_it, callbacks=[tboard_callback])
+
+# %%
+history = model.fit(train_ds, epochs=10, validation_data=dev_ds, callbacks=[tboard_callback])
 model.save('data/VGG_transfer-4_class.h5')
 summarize_diagnostics(history)
 
 # %%
 # model.compile(
 #     optimizer=keras.optimizers.Adam(learning_rate=1e-4),
-#     loss='categorical_crossentropy',
+#     loss='sparse_categorical_crossentropy',
 #     metrics=['accuracy'],
 # )
 # history = model.fit(train_it, epochs=10, validation_data=dev_it)
@@ -162,10 +193,10 @@ summarize_diagnostics(history)
 base_model.trainable = True
 model.compile(
     optimizer=keras.optimizers.Adam(learning_rate=1e-5),
-    loss='categorical_crossentropy',
+    loss='sparse_categorical_crossentropy',
     metrics=['accuracy'],
 )
-history = model.fit(train_it, epochs=5, validation_data=dev_it, callbacks=[tboard_callback])
+history = model.fit(train_ds, epochs=5, validation_data=dev_ds, callbacks=[tboard_callback])
 model.save('data/VGG_transfer-4_class3.h5')
 summarize_diagnostics(history)
 
