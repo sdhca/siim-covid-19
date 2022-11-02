@@ -1,0 +1,9 @@
+project:
+  output-dir: _docs
+
+website:
+  title: "siim-covid-19"
+  site-url: "https://sdhca.github.io/siim-covid-19"
+  description: "Models for detecting Covid-19 from x-ray images of lungs as part of the SIIM-FISABIO-RSNA COVID-19 Detection Kaggle competition"
+  repo-branch: main
+  repo-url: "https://github.com/sdhca/siim-covid-19"
